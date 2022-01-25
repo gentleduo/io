@@ -12,6 +12,7 @@ public class SocketClient {
 
             client.setSendBufferSize(20);
             client.setTcpNoDelay(false);
+            client.setOOBInline(false);
             OutputStream out = client.getOutputStream();
 
             InputStream in = System.in;

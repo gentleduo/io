@@ -1,6 +1,5 @@
 package org.duo.bio;
 
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,8 +17,9 @@ public class SocketIOPropertites {
     private static final boolean REUSE_ADDR = false;
     // 请求的连接数量非常大，资源不够时，允许排队的连接数
     private static final int BACK_LOG = 2;
+    // 在设置为true后，连接的双方会通过心跳来确认对方是活着的；注意和http协议中的KEEPALIVE之间的区别
     private static final boolean CLI_KEEPALIVE = false;
-    // 是否优先发送数据进行试探
+    // 嗅探：是否优先发送数据进行试探
     private static final boolean CLI_OOB = false;
     // 通过ss -natp可以看到Recv-Q，Recv-Q和CLI_REC_BUF的关系？
     private static final int CLI_REC_BUF = 20;
@@ -30,6 +30,7 @@ public class SocketIOPropertites {
     private static final int CLI_LINGER_N = 0;
     // 客户端读取数据的超时时间，0：表示阻塞等待
     private static final int CLI_TIMEOUT = 0;
+    // 表示是否开启发送优化，true：不开启优化，有数据就发送；false：开启优化，等数据累计到一个数据包的大小时再发送(默认值)
     private static final boolean CLI_NO_DELAY = false;
 
 //    StandardSocketOptions.TCP_NODELAY
@@ -42,55 +43,63 @@ public class SocketIOPropertites {
             server.setReceiveBufferSize(RECEIVE_BUFFER);
             server.setReuseAddress(REUSE_ADDR);
             server.setSoTimeout(SO_TIMEOUT);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        System.out.println("server up use 9090!");
 
-        while (true) {
-            try {
+            System.out.println("server up use 9090!");
 
-                System.in.read();
+            while (true) {
+                try {
 
-                Socket client = server.accept();
-                System.out.println("client port:" + client.getPort());
+                    //System.in.read();
 
-                client.setKeepAlive(CLI_KEEPALIVE);
-                client.setOOBInline(CLI_OOB);
-                client.setReceiveBufferSize(CLI_REC_BUF);
-                client.setReuseAddress(CLI_REUSE_ADDR);
-                client.setSendBufferSize(CLI_SEND_BUF);
-                client.setSoLinger(CLI_LINGER, CLI_LINGER_N);
-                client.setSoTimeout(CLI_TIMEOUT);
-                client.setTcpNoDelay(CLI_NO_DELAY);
+                    Socket client = server.accept();
+                    System.out.println("client port:" + client.getPort());
 
-                new Thread(() -> {
-                    while (true) {
-                        try {
-                            InputStream in = client.getInputStream();
-                            BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-                            char[] data = new char[1024];
-                            int num = reader.read(data);
+                    client.setKeepAlive(CLI_KEEPALIVE);
+                    client.setOOBInline(CLI_OOB);
+                    client.setReceiveBufferSize(CLI_REC_BUF);
+                    client.setReuseAddress(CLI_REUSE_ADDR);
+                    client.setSendBufferSize(CLI_SEND_BUF);
+                    client.setSoLinger(CLI_LINGER, CLI_LINGER_N);
+                    client.setSoTimeout(CLI_TIMEOUT);
+                    client.setTcpNoDelay(CLI_NO_DELAY);
 
-                            if (num > 0) {
-                                System.out.println("client read some data is :" + num + " val :" + new String(data, 0, num));
-                            } else if (num == 0) {
-                                System.out.println("client read nothing!");
-                                continue;
-                            } else {
-                                System.out.println("client read -1...");
-                                client.close();
+                    new Thread(() -> {
+                        while (true) {
+                            try {
+                                InputStream in = client.getInputStream();
+                                BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+                                char[] data = new char[1024];
+                                int num = reader.read(data);
+
+                                if (num > 0) {
+                                    System.out.println("client read some data is :" + num + " val :" + new String(data, 0, num));
+                                } else if (num == 0) {
+                                    System.out.println("client read nothing!");
+                                    continue;
+                                } else {
+                                    System.out.println("client read -1...");
+                                    client.close();
+                                    break;
+                                }
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                if (!client.isClosed()) {
+                                    try {
+                                        client.close();
+                                    } catch (IOException ioException) {
+                                        ioException.printStackTrace();
+                                    }
+                                }
                                 break;
                             }
-                        } catch (IOException e) {
-                            e.printStackTrace();
                         }
-                    }
-                }).start();
-            } catch (Exception e) {
-                e.printStackTrace();
+                    }).start();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
-
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
