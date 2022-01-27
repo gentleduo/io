@@ -59,7 +59,7 @@ public class SocketMultiplexingSingleThread {
         try {
             while (true) {
                 Set<SelectionKey> keys = selector.keys();
-                System.out.println(keys.size() + " size");
+//                System.out.println(keys.size() + " size");
                 /*
                 1.调用多路复用器(select,poll or epoll)
                 如果使用的是select,poll模型：select其实调的是内核的select(fds)方法
@@ -135,5 +135,11 @@ public class SocketMultiplexingSingleThread {
             ioException.printStackTrace();
         }
 
+    }
+
+    public static void main(String[] args) {
+
+        SocketMultiplexingSingleThread thread = new SocketMultiplexingSingleThread();
+        thread.start();
     }
 }
