@@ -124,9 +124,9 @@ public class SocketMultiplexingSingleThread {
                         client.write(buffer);
                     }
                     buffer.clear();
-                } else if (read == 0) {
+                } else if (read == 0) { // 等于0：没有读取到任何数据
                     break;
-                } else {
+                } else { // 如果小于0：客户端断开了连接，或者出现异常等情况
                     client.close();
                     break;
                 }

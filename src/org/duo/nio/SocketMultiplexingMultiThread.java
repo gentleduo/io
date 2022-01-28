@@ -67,7 +67,7 @@ public class SocketMultiplexingMultiThread {
                 2.select的参数可以带时间，表示阻塞多少毫秒；如果为零，则无限期阻塞； 不能为负
                 可以调用此选择器的wakeup方法结束阻塞
                  */
-                while (selector.select(500) > 0) {
+                while (selector.select(50) > 0) {
                     // 返回有状态的文件描述符的集合
                     Set<SelectionKey> selectionKeys = selector.selectedKeys();
                     Iterator<SelectionKey> iter = selectionKeys.iterator();
@@ -85,7 +85,8 @@ public class SocketMultiplexingMultiThread {
                             acceptHandler(key);
                         } else if (key.isReadable()) {
                             /*
-                            选择器将取消对该键对应通道的监听，在下一次选择操作时，该通道不会再作为选择器监听的对象
+                            选择器将取消对该键对应通道的监听，在下一次选择操作时，该通道不会再作为选择器监听的对象：
+                            在kernel层会发生一次系统调用：epoll_ctl(7, EPOLL_CTL_DEL, 8, 0x7fba8da263f0) = 0，表示将监听的FD从多路复用器创建的文件描述符代表的空间中删除掉
                             它是选择器对象的同步方法，因此如果与涉及同一选择器的取消或选择操作同时调用，会阻塞
                              */
                             key.cancel();
@@ -124,6 +125,7 @@ public class SocketMultiplexingMultiThread {
 
     public void readHandler(SelectionKey key) {
         new Thread(() -> {
+            System.out.println("Read Handler");
             SocketChannel client = (SocketChannel) key.channel();
             ByteBuffer buffer = (ByteBuffer) key.attachment();
             buffer.clear();
@@ -131,12 +133,13 @@ public class SocketMultiplexingMultiThread {
             try {
                 while (true) {
                     read = client.read(buffer);
+                    System.out.println(Thread.currentThread().getName() + " " + read);
                     if (read > 0) {
                         // 在读到了客户端发来的数据之后再注册写事件
                         client.register(key.selector(), SelectionKey.OP_WRITE, buffer);
-                    } else if (read == 0) {
+                    } else if (read == 0) { // 等于0：没有读取到任何数据
                         break;
-                    } else {
+                    } else { // 如果小于0：客户端断开了连接，或者出现异常等情况
                         client.close();
                         break;
                     }
@@ -149,6 +152,7 @@ public class SocketMultiplexingMultiThread {
 
     public void writeHandler(SelectionKey key) {
         new Thread(() -> {
+            System.out.println("Write Handler");
             SocketChannel client = (SocketChannel) key.channel();
             ByteBuffer buffer = (ByteBuffer) key.attachment();
             buffer.flip();
@@ -163,6 +167,14 @@ public class SocketMultiplexingMultiThread {
                 Thread.sleep(2000);
             } catch (InterruptedException e) {
                 e.printStackTrace();
+            }
+            buffer.clear();
+            key.cancel();
+            try {
+                client.close();
+            } catch (IOException ioException) {
+                System.out.println("adfadsfadsf");
+                ioException.printStackTrace();
             }
         }).start();
     }
