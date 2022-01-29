@@ -10,6 +10,13 @@ public class SelectorThreadGroup {
     SelectorThread[] selectorThread;
     ServerSocketChannel serverSocketChannel;
     AtomicInteger threadId = new AtomicInteger(0);
+    // 初始化都是boss组，如果没有设置worker那么就是混杂模式：client会平均分配到该组中的每一个selector
+    // 如果设置了worker那么：listen会被注册在boss组，而client会被注册到该SelectorThreadGroup对象中的workerSelectorThreadGroup对象中
+    SelectorThreadGroup workerSelectorThreadGroup = this;
+
+    public void setWorker(SelectorThreadGroup selectorThreadGroup) {
+        this.workerSelectorThreadGroup = selectorThreadGroup;
+    }
 
     SelectorThreadGroup(int num) {
 
@@ -40,38 +47,34 @@ public class SelectorThreadGroup {
      */
     public void nextSelector(Channel channel) {
 
-        // 混杂模式
-//        SelectorThread selectorThread = next();
-//
-////        // channel有可能是server也有可能是client
-////        ServerSocketChannel server = (ServerSocketChannel)channel;
-////        try {
-////            // 由于在selectorThread中已经调用了Selector的select方法，最终调用的是：sun.nio.ch.SelectorImpl.lockAndDoSelect
-////            // 而ServerSocketChannel的register最终会调用也会sun.nio.ch.SelectorImpl#register
-////            // 而lockAndDoSelect和register在SelectorImpl类中是同步方法，selectorThread在执行select方法的时候已经持有了该selector的锁，所以在这里在执行下面的方法时会因为获取不到锁而阻塞。
-////            server.register(selectorThread.selector, SelectionKey.OP_ACCEPT);
-////            // wakeup可以使selector的select方法立刻返回，从而释放锁
-////            // 如果将wakeup放在register之前执行，那么有可能selectorThread在被唤醒后register线程还没有完成注册前就又执行到了select方法的地方，那么在register线程中注册的事件还是无法被监听到
-////            // 如果wakeup放在register之后执行，那么有可能先执行selectorThread的select方法，然后再执行register线程的register方法，那么register线程将会被阻塞住，从而无法再执行wakeup方法
-////            // 所以将wakeup放在register的前后都不行，涉及到多线程之间的通信最好使用队列
-////            selectorThread.selector.wakeup();
-////        } catch (ClosedChannelException e) {
-////            e.printStackTrace();
-////        }
-//
-//        // 1.通过队列传递数据
-//        selectorThread.linkedBlockingQueue.add(channel);
-//        // 2.通过打断阻塞，让对应的线程自己在打断后完成事件的注册
-//        selectorThread.selector.wakeup();
+//        // channel有可能是server也有可能是client
+//        ServerSocketChannel server = (ServerSocketChannel)channel;
+//        try {
+//            // 由于在selectorThread中已经调用了Selector的select方法，最终调用的是：sun.nio.ch.SelectorImpl.lockAndDoSelect
+//            // 而ServerSocketChannel的register最终会调用也会sun.nio.ch.SelectorImpl#register
+//            // 而lockAndDoSelect和register在SelectorImpl类中是同步方法，selectorThread在执行select方法的时候已经持有了该selector的锁，所以在这里在执行下面的方法时会因为获取不到锁而阻塞。
+//            server.register(selectorThread.selector, SelectionKey.OP_ACCEPT);
+//            // wakeup可以使selector的select方法立刻返回，从而释放锁
+//            // 如果将wakeup放在register之前执行，那么有可能selectorThread在被唤醒后register线程还没有完成注册前就又执行到了select方法的地方，那么在register线程中注册的事件还是无法被监听到
+//            // 如果wakeup放在register之后执行，那么有可能先执行selectorThread的select方法，然后再执行register线程的register方法，那么register线程将会被阻塞住，从而无法再执行wakeup方法
+//            // 所以将wakeup放在register的前后都不行，涉及到多线程之间的通信最好使用队列
+//            selectorThread.selector.wakeup();
+//        } catch (ClosedChannelException e) {
+//            e.printStackTrace();
+//        }
 
-        // listen单独绑定一个selector，client分配到其他的selector
         try {
             if (channel instanceof ServerSocketChannel) {
-                selectorThread[0].linkedBlockingQueue.put(channel);
-                selectorThread[0].selector.wakeup();
+                SelectorThread selectorThread = nextListen();
+                // 1.通过队列传递数据
+                selectorThread.linkedBlockingQueue.put(channel);
+                // 2.通过打断阻塞，让对应的线程自己在打断后完成事件的注册
+                selectorThread.selector.wakeup();
             } else if (channel instanceof SocketChannel) {
-                SelectorThread selectorThread = next();
-                selectorThread.linkedBlockingQueue.add(channel);
+                SelectorThread selectorThread = nextClient();
+                // 1.通过队列传递数据
+                selectorThread.linkedBlockingQueue.put(channel);
+                // 2.通过打断阻塞，让对应的线程自己在打断后完成事件的注册
                 selectorThread.selector.wakeup();
             }
         } catch (InterruptedException e) {
@@ -79,14 +82,15 @@ public class SelectorThreadGroup {
         }
     }
 
-    private SelectorThread next() {
+    private SelectorThread nextListen() {
 
-//        // 混杂模式
-//        int index = threadId.incrementAndGet() % selectorThread.length;
-//        return selectorThread[index];
+        int index = threadId.incrementAndGet() % selectorThread.length;
+        return selectorThread[index];
+    }
 
-        // listen单独绑定一个selector，client分配到其他的selector
-        int index = threadId.incrementAndGet() % (selectorThread.length - 1);
-        return selectorThread[index + 1];
+    private SelectorThread nextClient() {
+
+        int index = workerSelectorThreadGroup.threadId.incrementAndGet() % workerSelectorThreadGroup.selectorThread.length;
+        return workerSelectorThreadGroup.selectorThread[index];
     }
 }
