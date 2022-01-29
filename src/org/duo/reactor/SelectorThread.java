@@ -13,9 +13,11 @@ public class SelectorThread implements Runnable {
     //注意：每个客户端只绑定一个selector
     Selector selector = null;
     LinkedBlockingQueue<Channel> linkedBlockingQueue = new LinkedBlockingQueue<>();
+    SelectorThreadGroup selectorThreadGroup;
 
-    SelectorThread() {
+    SelectorThread(SelectorThreadGroup selectorThreadGroup) {
         try {
+            this.selectorThreadGroup = selectorThreadGroup;
             selector = Selector.open();
         } catch (IOException ioException) {
             ioException.printStackTrace();
@@ -33,9 +35,9 @@ public class SelectorThread implements Runnable {
                 由于当前线程中只能监听执行select时刻的多路复用器中的文件描述符，无法监听之后由其他线程追加的文件描述符中的事件，因此有可能当前线程会进入永久阻塞的状态
                 所以会有selector中会有wakeup方法，唤醒某个阻塞的文件描述符，并且返回值为0
                  */
-                System.out.println(Thread.currentThread().getName() + " before select......" + selector.keys().size());
+//                System.out.println(Thread.currentThread().getName() + " before select......" + selector.keys().size());
                 int nums = selector.select(); //阻塞
-                System.out.println(Thread.currentThread().getName() + " after select......" + selector.keys().size());
+//                System.out.println(Thread.currentThread().getName() + " after select......" + selector.keys().size());
                 // 处理selectedKeys
                 if (nums > 0) {
                     Set<SelectionKey> keys = selector.selectedKeys();
@@ -54,17 +56,18 @@ public class SelectorThread implements Runnable {
                         }
                     }
                 }
-                // 处理一些task
+                // 由每个线程自己注册：serverSocketChannel、SocketChannel
                 if (!linkedBlockingQueue.isEmpty()) {
                     Channel channel = (Channel) linkedBlockingQueue.take();
-
                     if (channel instanceof ServerSocketChannel) {
                         ServerSocketChannel server = (ServerSocketChannel) channel;
                         server.register(selector, SelectionKey.OP_ACCEPT);
+                        System.out.println(Thread.currentThread().getName() + " register listen");
                     } else if (channel instanceof SocketChannel) {
                         SocketChannel client = (SocketChannel) channel;
                         ByteBuffer buffer = ByteBuffer.allocateDirect(4098);
                         client.register(selector, SelectionKey.OP_READ, buffer);
+                        System.out.println(Thread.currentThread().getName() + " register client: " + client.getRemoteAddress());
                     }
                 }
             } catch (IOException | InterruptedException ioException) {
@@ -76,11 +79,12 @@ public class SelectorThread implements Runnable {
     private void acceptHandler(SelectionKey key) {
 
         try {
+            System.out.println(Thread.currentThread().getName() + " acceptHandler......");
             ServerSocketChannel ssc = (ServerSocketChannel) key.channel();
             SocketChannel client = ssc.accept();
             client.configureBlocking(false);
-
             // 多线程中需要选择一个多路复用器register
+            selectorThreadGroup.nextSelector(client);
         } catch (IOException ioException) {
             ioException.printStackTrace();
         }
